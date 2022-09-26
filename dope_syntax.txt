@@ -1,0 +1,1114 @@
+# Language goals :
+# 
+# - be consistant without ambiguities
+# - support combinatorial functional programming
+# - expression syntax follows APL / J / BQN Style, while also removing 
+#     the ambiguity of unary and binary operators entirely
+# - The language should be terse enough, but without the goal of code golf, Haskell
+# - be strongly typed with basic type inference
+# - With a good compiler, it should be possible to make statically typed
+# - obviate parenthesis where possible
+#    but a normal form similar to S-expressions
+# - be line oriented
+# - work as a scripting language
+# - have modules
+# - have no circular dependancies
+# - Be it's own manefest format
+
+
+# 1: u y  :: J/APL
+y.u ~> c1.u1              # where u1 is a constant function
+
+# 2: x B y  :: J/APL
+y B x ~> c1 B c2          # this can be seen as a constant train  uc B uc
+
+# 3: (B u)y  :: J         # note this is not a train despite the (? B u) pattern
+y . u B ~> u1_c1 B c1
+
+# 4: x(B u)y  :: J
+y . u B right _ x ~> u1_c1 B right_c1 _ c2
+                  ~> u1_c1_c2 B right_c1_c2
+                  ~> u1_c1_c2 B c2
+
+                                     # assuming that u1 returns data value
+                  ~> u1_c1 B c2      # the second argument will be ignored for a unary function
+
+# 5: (u2 B u1)y  :: J/APL
+y . u1 B u2 ~> c1.(u1 B u2)
+          ~> u1_c1 B u2_c1 
+
+# 6: x(B3 B2 B1)y  :: J/APL
+y (B1 B2 B3) x ~> c1.(B1 B2 B3) _ c2
+               ~> B1_c1 B2 B3_c1 _ c2
+               ~> B1_c1_c2 B2 B3_c1_c2
+
+# 7: x(u@] B2 B1)y  :: J/APL
+y (B1 B2 u) x ~> c1.(B1 B2 u2) _ c2
+              ~> B1_c1 B2 u2_c1 _ c2 
+              ~> B1_c1_c2 B2 u2_c1_c2 
+
+# 8: x(u@[ B2 B1)y  :: J
+y (B1 B2 u.right) x   ~> c1 . B1 B2 B3 c2 # note that now it has pattern 6:
+
+# 9: x(B2 B1 u)y
+y (u B1 B2) x  ~> c1.(u1 B1 B2) _ c2
+               ~> u1_c1 B1 B2_c1 _ c2
+               ~> u1_c1_c2 B1 B2_c1_c2
+                                     # assuming that u1 returns data value
+               ~> u1_c1 B1 B2_c1_c2
+
+
+# Now moving away from J language syntax
+
+# chaining 'u'
+a.b.c   ~> (b_a).c  # note these are equivalent
+        ~> c_(b_a)
+
+a.(b.c) ~> a.(c_b) 
+        ~> c_b_a
+
+a_b_c <=> (a_b)_c 
+
+# corner cases
+a b ~> {c :: a_c b a}
+a . b c ~>  a_b c a
+
+B1 u B2 ~> {a b :: B1_a_b.u} # assuming u returns a data value
+
+a (b c) ~> {d :: a_d (b c) d}
+           {d :: (b_(a_d) c a_d)_d}
+           {d :: (a_d.b c a_d)_d}
+           {d :: c_(a_d.b)_(a_d)_d}
+
+a . b (c d) ~> d_(b_a.c)_(b_a)_a
+
+Examples
+
+
+3.double  => 6
+3 * 2     => 6
+3.(2 *)   => 6
+
+3.recip.double        ~> 2/3
+3.(1 div).(2 *)       ~> 2/3
+3.(1 div.flip) . * 2  ~> 2/3
+3.div_1.(*_2)         ~> 2/3  # underscores allow functional programming where functions are composed by value, the precedence is reversed
+
+
+# a clarification of '_' and '.' composition syntax
+# examples of the mean average, all of these are equivalent
+[1 2 3] . reflex_(0 fold left_+) div length   ~> 2
+[1 2 3] . (left_+ fold_0) div length          ~> 2
+[1 2 3] . (0 fold_+) div length               ~> 2   # here fold right curries +
+[1 2 3] . +.(fold_0) div length               ~> 2   
+[1 2 3] . fold_0_+ div length                 ~> 2
+[1 2 3] . 0.fold_+ div length                 ~> 2
+[1 2 3] . (0 fold +) div length               ~> 2  # this last version should now be possible
+
+# define a function with '::'
+sum :: 0 fold +
+
+(mean ::            # you can do it on mutiple lines if it is of form (name : body)
+  sum div length
+)
+
+[1 2 3].mean
+
+
+# you can also write it like so
+[1 2 3] . mean :: (sum :: 0.fold_+ ) (div :: %) length :: count
+[1 2 3].(mean ::
+  (sum :: 0.fold_+ ) (div :: %) length :: count
+)
+
+# if you want a more classic way of making definitions, 
+(mean [:: 
+    sum :: 0.fold_+ 
+    div :: %
+    len :: count
+  ]
+  sum div len
+)
+
+# when types are added the '::' is wrapped in parenthesis
+# here is a function with fully qualified types,
+# obviously overkill
+
+(mean (:: [num] [num])                    # takes a [num], returns a [num]
+
+  sum    (:: [num] [num])     0_fold_+
+  div    (:: [num] num [num]) %          # takes a '[num]', then a 'num', returns a '[num]'
+  length (:: [_] num)         count      # _ here indicates that the inner type of length can be ignored
+
+)                                        # this is a valid function as is, the defintions return themselves
+
+mean-plus :: 0.fold_+ % count        # good taste would dictate that you consider both the short and explicit versions
+
+
+# a higher order function may have a longer type signature
+(higher-order (:: (num num) (num bool) [num] bool)
+  left_map (@ :: compose) right_map
+)
+
+# Some examples
+
+4.recip + 7  ~> 29/4
+
+[4 5 6].(recip + count)  ~> [13/4 16/5 19/6] 
+
+[3 4 5].(+_1 max (recip + [4 4 4])) ~> [4 5 6] max ([1/3 1/4 1/5] + [4 4 4])
+                                    ~> [4 5 6] max [13/3 17/4 21/5]
+                                    ~> [13/3 5 6]
+
+
+4 (+ * - ^ =) 3 . (4 . + * - ^ = _ 3) ==  ~> true
+
+# Module paths are done with ' ` ' syntax between identifiers
+
+a :: std`filesystem`cd    # assign cd to a
+
+(matmul ::
+  [[1 0] [0 1]] 
+  std`linear-algebra`*::
+  [[1 2] [3 5]]
+)
+
+# Files
+# start 'my-mod.lang'
+::
+(.`my-train ::
+  .`double. (:: num num) 2 * 
+  plus       :: +
+  recip.     :: 1 div
+)
+
+.`my-train`+5 :: plus 5
+
+# EOF
+
+# using 'my-mod.lang'
+# start 'main.lang'
+[:: (m : my-mod)`(alias : my-train)`double]
+
+
+a :: 4 m`my-train 5     # 'a' and 'b' are equivalent, because they use the same functions
+b :: 4 alias 5
+
+c :: + m`my-train`double.
+c-prime :: + double.
+d [(:: num) alias`+5] 3.+5   # the import wraps the type, the type MUST then have parenthesis
+# EOF                        # else it will try to import 'num' 
+
+# Files are functions
+# start 'mean.lang'
+
+#EOF
+
+# as more imports are needed you may need more lines
+[:: [std`filesystem .
+    .`current-directory : cd           # this alias will be exported by the module  
+    [(f : filesystem) .                # parenthesize the module name to import it '[(module) : ... ]'
+                                       # then one can do '[: file item]'
+                                       # here we have an alias  because of the '[(alias : module) : ... ]'
+                                       # pattern, now one can do '[: f item]'
+      file-len
+      f-descriptor : file-descriptor
+                                       # to disambiguate, alias requires parenthesis when on the same line
+      (f-read : read) (f-open : open) f-close : close
+    ]
+  ]
+  std`collections`_                    # imports everything from 'std`collections'
+  .`lib`_                              # imports and exports everything from 'lib'
+  std`os`[_ . version]                 # imports everything from 'std`os' hiding 'version'
+  [std`pointer : [_ .                  # to have it on multiple lines you need this syntax
+    to-ref
+    (slice : _)                        # '(module-item : _)' is equivalent to 'module-item'
+  ]] 
+]
+
+
+# the same as above but written cleanly
+[:: 
+  [std . 
+    [filesystem .
+      .`current-directory : cd
+      [(f : file) .
+        file-len
+        file-descriptor : descriptor
+        file-read : read
+        file-open : open
+        file-close : close
+      ]
+    ]
+    collections`_
+    os`[_ : version] 
+    pointer`[_ : to-ref slice] 
+  ]
+  .`lib`_
+]
+
+
+# these are equivalent
+[:: (m : my-mod)`(alias : my-train)`[double (t : triple)]]
+[:: [(m : my-mod) : [(alias : my-train) : double (t : triple)]]]
+
+# however, only the last one can be written on multiple lines
+[:: [(m : my-mod) : 
+  [(alias : my-train) : 
+  double
+  t : triple
+  ]
+]]
+
+# type anotations can be done on modules, as a sanity check
+[(:: num num) 
+  [(m (: [num] num) my-mod) : 
+    [(a : my-train) : 
+      (plus (: num num num) _)
+      t (: num num) triple 
+    ]
+  ]
+]
+
+# on braces
+# if something is self contained on one line, it does not require parenthesis
+a :: b
+# but implicitly there are parenthesis
+(a :: b)
+
+
+
+# more examples
+
+[u1 u2 u3] . (left_id fold left_compose) call ~> [id.u1.u2.u3] # assuming left fold
+[u1 u2 u3] id.fold_compose   ~> [id.u1.u2.u3]
+
+4 + * - ^ % 2  ~> (4 + 2) * (4 - 2) ^ (4 % 2)
+               ~> 6 * 2 ^ 2
+               ~> 144
+
+
+3 double. * (`triple right.) 4 ~> (3 double) * (3 (`triple right) 4)
+                               ~> 6 * (4 triple)
+                               ~> 6 * 12
+                               ~> 72
+
+2 double. * right_id 5 ~> (2 double) * (2 right_id 4) 
+                       ~> 4 * (4 id)
+                       ~> 16
+
+
+# values
+
+g   # identifier
+5   # the literal '5'
++   # this is also an identifier
++_  # a Binary function curring the right argument
+[b] # arrays
+
+# a scalar value is represented with ' ` '
+[]    # this too is a value
+[`[1 2] `[3 4]] # note that without ' ` ' the scalars of the outer array would be numbers instead of vectors
+
+# Array/List syntax
+[1 2 3]           # 1D array (a vector), note that inside '[]' everything has the role of a value
+[f g h]           # 1D array of functions
+[[1 2] [3 4]]     # 2D array (a matrix), this is flat in memory
+[`[1 2] `[3 4]]   # 1D array of 1D arrays
+[(f.g.h.) 3]    # 1D array with 2 elements , were the first element is the result of (f g h)
+[h_(g_f) 3]         # the same as the above
+[]                # 1D empty array
+[[] []]           # 2D empty array, shape '[2 0]' 
+0 reshape [0 1 1] # 3D empty array, note that empty arrays of shape where the empty axis is not the last can only be made by computing it
+5 unit-array.      # 0D unit array, holds single element 5
+
+# TODO :: consider changing compliance to something other than '_'
+# Compliants are like reverse traits, where Compliants implement data types
+
+# for example, an array has expectations on how functions apply to them.
+
+double (:: num num) 2 *
+[1 2 3].double                         # this would error, so we will make the type '(: num num)' comply with array
+
+
+_ : fmap-num                            # the '_' on the left represents a compliance
+_ (: (num num) [num] [num]) fmap-num    # here is the explicit version
+
+# a Compliant's value is its definition
+
+[1 2 3].(_ :: fmap-num)_double ~> [2 4 6]
+
+# but once a compliant is defined, it will apply automatically to conforming type signatures
+   # first we have this expression
+[0 1 2].(_ :: fmap-num).(1 +).(5 *) 
+
+
+_ :: fmap-num
+[0 1 2].(1 +).(5 *) 
+
+
+   # check types with dummy identifiers
+~> [0 1 2]
+   .
+   (f (:: [num] unknown) 
+     (_ (:: (num num) [num] [num]) fmap-num).(g (:: num num) 1 +)
+     .
+     h(:: num num) 5 * 
+   )    
+
+~> [0 1 2]
+   .
+   (f [(:: [num] unknown) 
+      _ (:: (num num) [num] [num]) fmap-num
+     ]                                         # '.' is not a identifier, defining to it will result in 
+                                               # being able to define while not transforming the passed value
+     .
+     fmap-num.(g (:: num num) 1 +)             # the value of the Compliant was already applied
+     .
+     h (:: num num) 5 * 
+   )    
+
+~> [0 1 2]
+   .
+   (f [(:: [num] unknown) 
+       _ (:: (num num) [num] [num]) fmap-num
+     ]
+
+     g-prime (:: [num] [num]) fmap-num.(1 +)   # curry 'g' to make 'g-prime'
+     .
+     h (:: num num) 5 *                        # it is now apparent that h expects a 'num', but we pass a '[num]'
+   )
+
+~> [0 1 2]
+   .
+   (f [(:: [num] unknown) 
+     _ (:: (num num) [num] [num]) fmap-num
+     ]
+
+     g-prime (:: [num] [num]) fmap-num.(1 +)
+     .
+     fmap-num_(h (: num num) 5 *)               # we have a compliant for '(num num) [num]',
+   )                                            # that happens to return a '[num]'
+
+~> [0 1 2]
+   (f [(:: [num] (unknown : [num]))              # we now see that the unknown return type is '[num]'
+     _ (:: (num num) [num] [num]) fmap-num
+     ]    
+
+     g-prime  (:: [num] [num]) fmap-num.(1 +)
+     .
+     h-prime  (:: [num] [num]) fmap-num.(5 *)   # curry 'h' to make 'h-prime'
+   )                                           # it is now evident that the types line up
+
+~> [0 1 2] . fmap-num.(1 +) . fmap-num.(5 *)     # if we simplify, we get the following
+~> [1 2 3] . fmap-num.(5 *)                      # and evaluation become clear
+~> [5 10 3]
+
+ 
+
+
+# multiple Compliants
+[::
+  _ (:: (num num) [num] [num]) : fmap-num      # Compliant will be local
+
+  (_`promote-num-to-array 
+     :: ([num] [num]) num [num]                # Compliant will be exported, 
+     (@ :: compose).unit-array                # with name 'module-name`_`promote-num-to-array'
+  )
+
+  inc. :: + 1                                   # of course, you can still define normal functions
+]
+
+# a compliant for a binary operator
+
+# type anotation defining the type signature for a scope, 
+# if followed by nothing on the line, or closed with parenthesis 
+(_ :: (Op : num num num) [num] num [num]
+
+    ({:3} fmap.after_curry-to)      (:: Op _ num [num])
+    apply                           (:: (num [num]) [num] [num])
+    {:2}                            (:: _ [num] _ [num])
+)
+
+# short version
+_ (:: ((n : num) n n) [n] n [n]) {:3 fmap.after_curry-to :1 _ :2}
+
+# if you import everything from a library,
+# but it has a compliant that conflicts
+# a prefered override, you can import hiding the function, then use it explicitly
+
+# start 'micro-prelude.lang'
+::
+_`scalar->array (:: ([num] [num]) num [num]) (@ :: before).unit-array
+.`minus : neg
+# EOF
+
+# start 'dep.lang'
+::
+_`wild (:: ([num] [num]) num [num]) before.((* 2) unit-array.)
+.`plus : +
+# EOF
+
+# start 'use-dep.lang'
+[:: micro-prelude`_ 
+   (dep)`[_ : _`wild]   # here 'dep`_`wild is hidden
+
+   # std                # note std would be imported by default (described in a manifest)
+]
+
+(f [(:: bool) std`array`reshape]
+
+  5 minus. plus 9  # using our imports 'neg' and 'plus', this will return 4
+  reshape [3 3]    # note reshape here will now comply with '4' using '_`scalar->array'
+                   # doing '4 unit-array_@_reshape [3 3]'
+  = 
+  [[4 4 4]    
+   [4 4 4]
+   [4 4 4]
+  ]               # then this will return 'true'
+
+)
+# EOF
+
+
+# initially you will only be able to define a Compliant that
+# is one function signature for one type
+_ (:: (num num) [num] [num]) fmap-num            # these Compliants conflict, because the arguments are the same
+_ (:: (num num) [num] num)   (@ :: before).first # the return type is irrelavent in determining what compliant to use
+
+
+
+
+# Generics
+# When declaring types, ' ` ' is used to indicate Generics 
+
+(gen-func 
+  [(:: ('T : 
+        My-trait_,{output :: 'T}_char
+        Hers
+      )
+      'G : Your-Trait_f64_,{return :: u8}
+      'T 
+   )
+    My-Trait Your-Trait (Hers : Her-Trait)   # the traits are imported in this scope, 
+                                             # but can also be used in the type signature
+  ]
+  MyTrait`do Your-Trait Hers
+)
+
+
+# We can make Compliants generic using generic syntax
+_ (:: ('T 'T) ('T-map :: Functor_'T) 'T-map) Functor`fmap
+
+# The last Compliant declared takes precedece over previous Compliants
+(_ 
+  [(:: (`T `T) (`T-map : F_`T) `T-map) 
+    F : std`Functor
+  ] 
+  F`fmap
+)
+
+_ (:: (num num) ([num] [num])) fmap-num
+
+(g (:: [num]) [1 2 3]) plus (:: num num) + 5   # here fmap-num would be used 
+                                             # because it was declared most recently
+                                             # and 'num num' would match before '`T `T'
+
+
+
+
+
+{5 + 6}  # a constant function, basically euivalent to (5 + 6)
+{:2 - :1}  # keywords will exist for the default left and right arguments
+{:2}       # this binary ignoring the first
+{:1}       # this is a unary id function
+{:3 {:2} :1} # takes 3 values, returns the first
+
+# you can use values above 2
+{:1 + :3} # a function that currys 3 arguments, the 2nd is ignored
+
+
+{(:: num num num) :2 - :1}      # lambdas can be typed
+
+?{a b c :: b - a + c}           # if you really want a full lambda, you can irrefutably match
+
+?{,(a b c)  :: b - a + c}       # you can destructure a pattern
+?{,(a b) c (:: ,(num num) num) 
+  b - a + c
+}                               # also on binary arguments
+
+
+# Possible Type syntax
+a (:: ,(num char))   ,(1 'a')      # tuple
+b (:: ,{(x :: num) (y :: num)})    # anonymous record, structurally typed
+a (:: ,[num `3])     ,[1 2 3]      # static array
+
+# Enums / tagged unions
+[bool ::    # the square brace suggests that it all values are the same size
+  true
+  false
+]
+
+# this syntax needs work
+[option :: some_'T none]
+
+[option :: 
+  some_'T
+  none
+]
+
+[result :: (ok_'T) (err_'E) ]
+
+[config ::
+  test_,{(version :: string) (log :: bool)}    # record variant
+  dev_,{ 
+    version :: string 
+    hash    :: u128
+  }
+  default
+  basic
+  tagged_[string]
+]
+
+# The variants need not be named, if they are different types, 
+# but they must be preceded with '_'
+[integer :: _i8 _i16 _i32 _i64 _i128 _i256]
+
+# Making A nominally typed record is done with a single variant 
+# (in the implementation the discriminant would not be there anymore)
+[vec3 :: _,{(x :: num) (y :: num) (z :: num)}]
+
+
+
+# Pattern matching uses lambda syntax
+
+?{(bool`true :: 1) (bool`false :: 2 + 4)}
+
+# multiline
+
+?{
+  bool`true :: 1
+  (bool`false :: 
+    2 + 4
+  )
+}
+
+
+none.?{
+  some_val :: val + 2
+  none : 5
+}
+
+(i : integer)_5.?{
+  5.i (:: i_i8)  1
+  5.i (:: i_i16) 2
+  5.i (:: i_i32) 3
+  5.i (:: i_i64) 4
+  a :: 0
+}
+
+# If there is only one variant, it is basically a lambda
+(vec3_,{
+  x :: 1
+  y :: 2
+  z :: 3
+ }.?{vec3_,{x y (zed : z)} (:: vec3 num) x + y + zed}
+)
+
+# 
+?{
+  (2d-point_,{((bind1 : x) :: 5 ..= 10) (bind2 : y :: 7)} :: bind1 + bind2
+  _ : 0  
+}
+
+
+,['T '(int)]
+a (: ,[('T : Sized) '(isize)]) .  # generic and const generic tuple
+
+[1 2 3] reduce.+. % count.
+
+[1 2 3] 0_fold_+.
+[1 2 3] (fold.0)_+.
+
+
+# Term rewriting
+# Inverses
+
+(inv 
+  (.: 
+    `F :: 'A 'B 'C 
+    `I :: 'C 'B 'A
+  )
+  `F.inv :: `I
+  `I.inv :: `F
+)
+
+inv_+ (:: num num num) + -_  # now both sides are inverses of each other inv_(+ -_)
+inv_* (:: num num num) * %_
+
+# Partial Inverse  
+
+(p-inv
+  (.:
+    `F :: 'A 'B 'C        # the ` here denotes a concrete value F
+    `I :: 'C 'B 'C
+    `I.inv                # requirement
+   )
+  `F.p-inv :: `I  
+  `I.p-inv :: `I.inv      # derives p-inv for `I
+)
+
+[] :: unit        # empty array has a space '[ ]'
+flat.inv :: unit.at-rank_0                            # declare inverse, note both functions takes arrays and return arrays
+[].p-inv :: flat                                   # now declare partial inverse
+
+[].p-inv.inv :: unit.at-rank_0
+
+(assoc 
+  (.: 
+    `A :: 'T 'T 'T 
+    [`x `y `z] :: ['T]
+  )
+  `A.assoc :: `A
+  (`x `A (`y `A `z)) :: `x `A `y `A `z
+)
+
+*.assoc :: *
++.assoc :: +
+
+(commute 
+  (.:
+    `F :: 'T 'T 'T
+    [`x `y] :: ['T]
+  )
+  `F.commute :: `F
+  (`x `F `y) :: `y `F `x
+)
+
+(u-rank 
+  (.: 
+    `F :: ['T] ['T]
+    `r :: num
+  )
+  `F.u-rank_`r :: F.at-rank_`r
+  `F.what-u-rank :: `r
+)
+
+
+# Train behavior and Functional Colapse
+# the type and evaluation of a Train is dependant on the 
+# functions at the second + 2n positions
+# Those functions take the return values of the left and right values
+# as arguments, effectively meaning that they behave like infix functions.
+
+a (:: num) ?        # beginning with a possible input 'a'
+f (:: num num) ?    # and a unary function 'f'
+
+# ex 1
+
+a . f               # technically a and f are each a train with 1 'car'
+                    #
+                    # lets show the types
+a (:: num) . f (:: num num)
+                    # f is alone, and is therefore, satistifed with itself
+                    # however '.' suggests that 1 argument will be passed
+a (:: num) . f (:: num | num) 
+                    # '|' and '!( .. )' are not syntax, it is used only to explicate
+                    # we see the argument f requires is 'num'
+                    # we look at the argument being passed and conclude that
+                    # the type 'num' is satisfied with 'a'
+a (:: !(num)) . f (:: !(num) | num) 
+                    # therefore the value will colapse to a 'num'
+
+# ex 2
+
+b (:: num num num) ?  # this function takes 2 arguments
+
+a b                   # this is no longer trivial, this a 2 'car' train
+                      # all even trains end with the identity function
+(a b) <==> {x :: a_x b x}
+(a b) <==> a b id     # this will make sense later
+
+                      # check the types
+(a (:: num)) (b (:: num num num)) (id (:: `A `A))
+                      # 'b' is in the last binary position, so we first declare
+                      # the arguments it requires
+(a (:: num)) (b (:: num num | num)) (id (:: `A `A))
+                      # We then assert the right function 'id' must return a num
+                      # since type '`A `A' would be a function, and b expects a num,
+                      # '`A' must be num, and the return is then locked to a num
+(a (:: num)) (b (:: num !(num) | num)) (id (:: num | !(num)))
+                      # now that the return type of id has been found, the left of 'b'
+                      # looks to be satistifed, and it is by 'a'
+(a (:: | !(num))) (b (:: !(num) num | num)) (id (:: num | num))
+                      # if 'id' did not still require an argument, 
+                      # the function would colapse into a value,
+                      # but because 
+                      # the outer 'prongs' of the fork then determine the argument type,
+                      # 'a' requires nothing and will ignore arguments as it
+                      # 'id' requires a 'num', so 'a' will aquire dummy arguments indicated with '_'
+(a (:: _ | num)) (b (:: num num | num)) (id (:: num | num))
+                      # then arguments are compared to see if they match, where '_' matches anything
+(a (:: arg(_) | num)) (b (:: num num | finalReturn(num))) (id (:: arg(num) | num))
+                      # it matches to 'num' so
+(a b) (:: arg(num) finalReturn(num))
+(a b) (:: num num)
+
+# ex 3
+
+
+5 (+ * double) 6 + 5
+(+_5_6 * double_5_(_6))
+
+
+fold (:: 'A ('A 'B 'A) | ['B] 'A) ?
++ (:: | num num num)
+
+0 fold + _ [1 2 3]
+
+0.fold_+_[1 2 3]
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+# scratch space
+
+mean =: +/ % #
+
+[1 2 3]
+
+mean :: +./ % #
+mean :: +./ % #
+
+[1 2 3].(+./ % #)
+[1 2 3] . +./ % #
+
+
+
+[1 2 (1 + 3)]
+
+5.(1 + 3)
+4 . 5
+
+1.+_2
++_1_2
+
+
+[[1 2 ] [3 4]] . (+./ % #).rank_1
+[[1 2 ] [3 4]] . rank_(+./ % #)_1   NB. f_g_h == (f(g)) h
+[[1 2 ] [3 4]] . 1.((+./ % #).rank) NB. f.g.h == h_(g_f)
+~> [1,5 3,5]
+
+double (:: num num) 2 * 
+
+compliant (:: (num num) ([num] [num])) superMap
+compliant :: superMap
+
+[2 3].(super_double)
+
+f.@_g
+
+/_+_[1 2 3].double
+
+5.(double + recip)
+
+5.(double + recip)
+5:(double + recip)
+
+[[1 2] [3 4]].(+./ % #).(+./ % #)
+
+3 (+ + +) 4
+3 (sig + neg);(double + recip);
+
+mean :: /_+ % #
+yup  :: + * %
+
+1 (+ - recip) 3
+
+3.* +
+5 . 3.* +
+3.*_5 + 5
+
+double (:: num num) 2 *
+               func       arg
+compliant (:: (num num) ([num] [num])) map
+
+a (:: [num] [num]) [1 2 3].(map_double)
+
+[`[1 2 3] 
+ `[1 2 3]
+]
+
+(0 (:: | num)
+ + (:: | num num num)
+ fold (:: num (num num num) ([num] num) )
+ (0 fold +)_[1 2 3]
+)
+
+c (:: num num num | num)
+c_x (:: num num| num)
+c_x_y (:: num | num)
+a (:: num num | num)
+a_x (:: num | num)
+a_x_y (:: | num)
+
+b (:: (num) (num) (num [num]))
+
+a (:: num num | num num) 
+c (:: num num num | num)
+
+b(:: (num num) num | num num num)
+(a b c)_1_2_3
+
+
+1 ( 0 fold mullAdd) [1 2 3]
+[1 2 3] . f
+
+(
+2 +                    (:: num num)
+( map                  (:: (num num) [num] [num])     // (:: (num num)           | [num] [num]) 
+  applyTo              (:: ('X 'Z) 'X 'Z)             // (:: ([num] [num]) [num] | [num])
+  right                (:: 'A 'B 'B)                  // (:: (num num) [num]     | [num])
+
+  +arr                 (:: [num] num | [num])         // (:: [num] num             | [num])
+  firstOfTwo_(+./ % *) (:: 'C [num] num)              // (:: (num num) [num]     | num)
+)
+[[1 2] [1 2]]          (:: [num])
+)
+
+c :: 5
+d (:: num) 5 + 7
+
+
+c (: num num num num)
+c (: num num (num num))
+
+c2 (:: num (num num) num)
+
+a b c d
+
+(a b c)
+[1 2 3]
+x.(a b c d)
+(a_x b c_x d x)
+
+4.(+ - *)_5
+
+3 +   // (:: num num num) 
+
+
+
+[1 2 3] . sum div count . double
+
+mean  :: (sum :: +./) (div :: %) (count :: #) 
+(mean :: 
+  sum :: +./
+  div :: % 
+  count :: #
+)
+
+[1 2 3].mean
+
+(foo :: (a :: 3) (b (:: num) 5) (d :: 7))
+
+
+
+[(1 + 3) 4 5]
+
+4 (+ - *) 5
+
+(+ - * - +)_4_5
+
+(a b)_c
+(a_c b c)
+
+6.double.recip
+
+
+
+
+
+[1 2 3]
+2
+"dfdsfd"
+
+3.double.recip
+recip_(double_3)
++_1_3
+
+2.+_3
+2 . + _ 3
+
+fold_0_+_[1 2 3]
+[1 2 3].(fold_0_+).double
+[1 2 3] . fold_0_+ . double
+
+fold_0_+ _ [1 2 3]
+
+1 + 3
+
+f (:: num num) double - recip  // double (:: num | num)
+                               // recip  (:: num | num)
+                               // -      (:: num num num)
+5 . double - recip
+double_5 - recip_5
+
+4 . + - double
+4.(+ - double)
+(+_4 - double_4)
+
+(+_4 - double_4)_5
+(+_4_5 - double_4)
+
++_4 (:: num num)
+
+
+- (:: num (num (num)))
+
+(+ - double) (:: num num num)
+
+(4 (+ - double) 5)
+
+(mean :: 
+  sum (:: [num] num) 0 fold +
+  div :: % 
+  len :: #
+
+  sum div len
+)
+
+mean :: 0.fold_+ % #
+
+
+@ :: {a b c:: c.b.a }
+
+4 . double.@_recip - id
+
+4.(double + recip +)
+(double_4 + recip_4 + 4)
+
+double :: 2 *
+
+[1 2 3] . (3 ==) map
+(3 ==) map [1 2 3]
+
+[false false true]
+
+[0 0 1]
+[1 2 3] . (3 ==) filterByArray
+(3 ==).[1 2 3] filterByArray [1 2 3]
+[f f t] filterByArray [1 2 3]
+[3]
+
+
+
+
+{a}{*}{b}{+}{cat}{-}{d}{%}{e}
+
++( *(a  b) 
+   -(cat 
+     %(d 
+       e)))
+
++( *(a  b) 
+   -(cat 
+     %(d 
+       e)))
+ 
+a b * cat d e % - +
+
+{a}{+}{b}{*}{braces : {c}{%}{d} }
+a + b * (c % d)
+
+
+
+
+
+
+
+
+
+
+
+
+1 + 1
++ (:: num num num)
+compliant (:: (num num num) [num] num [num]) 
+[1 2 3] + 2 
+
+
+=> [3 4 5]
+double (:: num num) 2 *
+
+1.double
+
+1.double
+[1 2 3] +
+
+(a b) <==> ?{x :: a_x b x}
+
+* (:: num num | num)
+id (:: 'A 'A)
+5.(2 * id)
+
+
+(+ *)_5_6
+(+_5_6 * 5)
+
+1 (2 + *) 3
+
+(+ (* 1 3) (const 2 _))
+
+[1 2 3].(0 fold +).?{a :: a}
+
+
+
+
+
+
+(fact (:: num num) 
+  iota . (1 +).fmap  (:: num [num])
+  .
+  1 fold *           (:: [num] num)       
+)
+
+(fizzbuzz [(:: num [string])
+    f :: "fizz"
+    b :: "buzz"
+  ]
+  iota . (1 +).fmap
+  .
+  mod_3.fmap zip mod_5.fmap
+  .
+  ?{
+    ,(0 0) :: f cat b
+    ,(0 _) :: f
+    ,(_ 0) :: b
+  }.fmap
+)
+fizzbuzz_70
+70.fizzbuzz
+
+[1 2].(fizzbuzz.fmap)
+
+pair :: { ,(:1 :2) }
+
+pair_1_2
+,(1 2)
+
+
+
+
+
+
+
