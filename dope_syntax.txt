@@ -247,18 +247,31 @@ d [(:: num) alias`+5] 3.+5   # the import wraps the type, the type MUST then hav
   .`lib`_
 ]
 
+# the same as above but written cleanly
+[:: 
+  [. std ` 
+    {filesystem `
+      .`current-directory : cd
+      {(f : file) `
+        file-len
+        file-descriptor : descriptor
+        file-read : read
+        file-open : open
+        file-close : close
+      }
+    }
+    collections`_
+    os`{:~ version} 
+    pointer`{:~ to-ref slice}
+  ]
+  .`lib`_
+]
 
-# these are equivalent
-[:: (m : my-mod)`(alias : my-train)`[double (t : triple)]]
-[:: [(m : my-mod) : [(alias : my-train) : double (t : triple)]]]
-
-# however, only the last one can be written on multiple lines
-[:: [(m : my-mod) : 
-  [(alias : my-train) : 
-  double
+[:: [. (m : my-mod)`(alias : my-train) `
+  double 
   t : triple
   ]
-]]
+]
 
 # type anotations can be done on modules, as a sanity check
 [(:: num num) 
@@ -518,107 +531,107 @@ _ (:: (num num) ([num] [num])) fmap-num
 
 
 
-{5 + 6}  # a constant function, basically euivalent to (5 + 6)
-{:2 - :1}  # keywords will exist for the default left and right arguments
-{:2}       # this binary ignoring the first
-{:1}       # this is a unary id function
-{:3 {:2} :1} # takes 3 values, returns the first
+\{5 + 6}  # a constant function, basically euivalent to (5 + 6)
+\{:2 - :1}  # keywords will exist for the default left and right arguments
+\{:2}       # this binary ignoring the first
+\{:1}       # this is a unary id function
+\{:3 \{:2} :1} # takes 3 values, returns the first
 
 # you can use values above 2
-{:1 + :3} # a function that currys 3 arguments, the 2nd is ignored
+\{:1 + :3} # a function that currys 3 arguments, the 2nd is ignored
 
+fib :: <=_1.if_id_(fib.@_dec + fib.@_(dec @ dec))
+fib :: \{<=_1.if_id_(:0.@_dec + :0.@_(dec @ dec))}                     # :0 is the function itself, so it can be used for recursive lambdas 
 
-{(:: num num num) :2 - :1}      # lambdas can be typed
+\{(:: num num num) :2 - :1}      # lambdas can be typed
 
 ?{a b c :: b - a + c}           # if you really want a full lambda, you can irrefutably match
 
 ?{,(a b c)  :: b - a + c}       # you can destructure a pattern
-?{,(a b) c (:: ,(num num) num) 
+?{,(a b) c (:: ,(num num) num num) 
   b - a + c
 }                               # also on binary arguments
 
+                                # ' :| ' match guard , ' :? ' recursive call 
+(fib :: ?{
+    b :| <_1 :: id 
+    g        :: g . :?.@_dec + :?.@_(dec @ dec)
+  }
+)
 
 # Possible Type syntax
-a (:: ,(num char))   ,(1 'a')      # tuple
-b (:: ,{(x :: num) (y :: num)})    # anonymous record, structurally typed
-a (:: ,[num `3])     ,[1 2 3]      # static array
+a (:: ,(num char)) ,(1 'a')   :# tuple
+b (:: {x y})       {y_7 x_5}  :# anonymous record, structurally typed, unordered
+a (:: ,[num 3])    ,[1 2 3]   :# static array
 
 # Enums / tagged unions
-[bool ::    # the square brace suggests that it all values are the same size
-  true
-  false
-]
+bool := 1{true false}
 
 # this syntax needs work
-[option :: some_'T none]
+option:'T := 1{some_'T none}
 
-[option :: 
-  some_'T
-  none
-]
+result:'T:'E := 1{
+  ok_'T := 'T 
+  err_'E := 'E
+}
 
-[result :: (ok_'T) (err_'E) ]
-
-[config ::
-  test_,{(version :: string) (log :: bool)}    # record variant
-  dev_,{ 
-    version :: string 
-    hash    :: u128
-  }
+(config := 1{
+  test := {(version := string) (log := bool)}    # record variant
+  (dev := { 
+    version := string 
+    hash    := u128
+  })
   default
   basic
-  tagged_[string]
-]
+  tagged:(vec:string)
+})
 
-# The variants need not be named, if they are different types, 
-# but they must be preceded with '_'
-[integer :: _i8 _i16 _i32 _i64 _i128 _i256]
+# The variants are distinct types
+integer := 1{i8 i16 i32 i64 i128 i256}
 
-# Making A nominally typed record is done with a single variant 
-# (in the implementation the discriminant would not be there anymore)
-[vec3 :: _,{(x :: num) (y :: num) (z :: num)}]
+# Making A nominally typed record is done with a newtype 
+(vec3 := {
+  x := (u : u16)
+  y := u
+  z := u
+})
 
 
 
 # Pattern matching uses lambda syntax
 
-?{(bool`true :: 1) (bool`false :: 2 + 4)}
+true:bool.?{(true :: 1) (false :: 2 + 4)}
 
 # multiline
 
-?{
-  bool`true :: 1
-  (bool`false :: 
-    2 + 4
-  )
+false:bool.?{
+  true  :: 1
+  false :: 2 + 4
 }
 
 
-none.?{
+(none.?{
   some_val :: val + 2
-  none : 5
-}
+  none :: 5
+})
 
-(i : integer)_5.?{
-  5.i (:: i_i8)  1
-  5.i (:: i_i16) 2
-  5.i (:: i_i32) 3
-  5.i (:: i_i64) 4
+(integer_5.?{
+  5.i8  :: 1
+  5.i16 :: 2
+  5.i32 :: 3
+  5.i64 :: 4
   a :: 0
-}
+})
 
 # If there is only one variant, it is basically a lambda
-(vec3_,{
-  x :: 1
-  y :: 2
-  z :: 3
- }.?{vec3_,{x y (zed : z)} (:: vec3 num) x + y + zed}
+(vec3_,{x_1 y_2 z_3}
+ .
+ ?{vec3_{x y (zed : z)} (:: vec3 num) x + y + zed}
 )
-
-# 
+ 
 ?{
-  (2d-point_,{((bind1 : x) :: 5 ..= 10) (bind2 : y :: 7)} :: bind1 + bind2
-  _ : 0  
+  (2d-point_{(bind1 : x)_(5 ..= 10) (bind2 : y)_7)} :: bind1 + bind2
+  _ :: 0  
 }
 
 
@@ -768,319 +781,96 @@ fold (:: 'A ('A 'B 'A) | ['B] 'A) ?
 
 0.fold_+_[1 2 3]
 
+# numeric literals
+# users can define numeric literals for thier own types
+# any numeric literal must begin with a number 0..9
 
+# negative numbers
+# since all numeric literals begin with a number 0..9,
+# negatve numbers are indicated with a postfix -
 
+4-
+[4- 5- 8-]
 
+5 + 4-
 
+# imaginary numbers
+6-i5.4      # -6 + 5.4i
 
+# In a numeric literal there are some limits to the use of . _
+0.0.0.6  # ip address?
 
+0.u
+8<u8>
 
+0..6:(range:u8)
 
+20..50
 
+() [] {} : .
 
+0 to 6
 
+45;34;57:vec
 
+0<12;13;14>
 
-# scratch space
+0<12;8;14> + 0..3 + 3:4
 
-mean =: +/ % #
++_0_4
+3.+_5.double
 
-[1 2 3]
+double_3.5
 
-mean :: +./ % #
-mean :: +./ % #
+0<12:13:14>:(vec:u8).double
 
-[1 2 3].(+./ % #)
-[1 2 3] . +./ % #
+12'3"
 
+0<<12,45><36_000-,9.6>>:(list:f64)
 
+0<2..4'6..7'1..9>:(list:(range:u8))
 
-[1 2 (1 + 3)]
+4-
 
-5.(1 + 3)
-4 . 5
+-3
 
-1.+_2
-+_1_2
+2-/5
 
+[4- 6- 8-]
 
-[[1 2 ] [3 4]] . (+./ % #).rank_1
-[[1 2 ] [3 4]] . rank_(+./ % #)_1   NB. f_g_h == (f(g)) h
-[[1 2 ] [3 4]] . 1.((+./ % #).rank) NB. f.g.h == h_(g_f)
-~> [1,5 3,5]
 
-double (:: num num) 2 * 
+1,000,000.25-
 
-compliant (:: (num num) ([num] [num])) superMap
-compliant :: superMap
+1'000'000.25-:fixed-point
 
-[2 3].(super_double)
 
-f.@_g
+1.598*10^23 + 5
 
-/_+_[1 2 3].double
+(23 .: a_b)_c
 
-5.(double + recip)
+1,000,000.25-:(type:a:b)
 
-5.(double + recip)
-5:(double + recip)
+4+5i
 
-[[1 2] [3 4]].(+./ % #).(+./ % #)
+8._.7
+55
+[4-+5i- 5- 6i 4]
 
-3 (+ + +) 4
-3 (sig + neg);(double + recip);
+4 + 3-:float64
 
-mean :: /_+ % #
-yup  :: + * %
+[3:(posit_5_7) 4 5 6]
 
-1 (+ - recip) 3
-
-3.* +
-5 . 3.* +
-3.*_5 + 5
-
-double (:: num num) 2 *
-               func       arg
-compliant (:: (num num) ([num] [num])) map
-
-a (:: [num] [num]) [1 2 3].(map_double)
-
-[`[1 2 3] 
- `[1 2 3]
-]
-
-(0 (:: | num)
- + (:: | num num num)
- fold (:: num (num num num) ([num] num) )
- (0 fold +)_[1 2 3]
-)
-
-c (:: num num num | num)
-c_x (:: num num| num)
-c_x_y (:: num | num)
-a (:: num num | num)
-a_x (:: num | num)
-a_x_y (:: | num)
-
-b (:: (num) (num) (num [num]))
-
-a (:: num num | num num) 
-c (:: num num num | num)
-
-b(:: (num num) num | num num num)
-(a b c)_1_2_3
-
-
-1 ( 0 fold mullAdd) [1 2 3]
-[1 2 3] . f
-
-(
-2 +                    (:: num num)
-( map                  (:: (num num) [num] [num])     // (:: (num num)           | [num] [num]) 
-  applyTo              (:: ('X 'Z) 'X 'Z)             // (:: ([num] [num]) [num] | [num])
-  right                (:: 'A 'B 'B)                  // (:: (num num) [num]     | [num])
-
-  +arr                 (:: [num] num | [num])         // (:: [num] num             | [num])
-  firstOfTwo_(+./ % *) (:: 'C [num] num)              // (:: (num num) [num]     | num)
-)
-[[1 2] [1 2]]          (:: [num])
-)
-
-c :: 5
-d (:: num) 5 + 7
-
-
-c (: num num num num)
-c (: num num (num num))
-
-c2 (:: num (num num) num)
-
-a b c d
-
-(a b c)
-[1 2 3]
-x.(a b c d)
-(a_x b c_x d x)
-
-4.(+ - *)_5
-
-3 +   // (:: num num num) 
-
-
-
-[1 2 3] . sum div count . double
-
-mean  :: (sum :: +./) (div :: %) (count :: #) 
-(mean :: 
-  sum :: +./
-  div :: % 
-  count :: #
-)
-
-[1 2 3].mean
-
-(foo :: (a :: 3) (b (:: num) 5) (d :: 7))
-
-
-
-[(1 + 3) 4 5]
-
-4 (+ - *) 5
-
-(+ - * - +)_4_5
-
-(a b)_c
-(a_c b c)
-
-6.double.recip
-
-
-
-
-
-[1 2 3]
-2
-"dfdsfd"
-
-3.double.recip
-recip_(double_3)
-+_1_3
-
-2.+_3
-2 . + _ 3
-
-fold_0_+_[1 2 3]
-[1 2 3].(fold_0_+).double
-[1 2 3] . fold_0_+ . double
-
-fold_0_+ _ [1 2 3]
-
-1 + 3
-
-f (:: num num) double - recip  // double (:: num | num)
-                               // recip  (:: num | num)
-                               // -      (:: num num num)
-5 . double - recip
-double_5 - recip_5
-
-4 . + - double
-4.(+ - double)
-(+_4 - double_4)
-
-(+_4 - double_4)_5
-(+_4_5 - double_4)
-
-+_4 (:: num num)
-
-
-- (:: num (num (num)))
-
-(+ - double) (:: num num num)
-
-(4 (+ - double) 5)
-
-(mean :: 
-  sum (:: [num] num) 0 fold +
-  div :: % 
-  len :: #
-
-  sum div len
-)
-
-mean :: 0.fold_+ % #
-
-
-@ :: {a b c:: c.b.a }
-
-4 . double.@_recip - id
-
-4.(double + recip +)
-(double_4 + recip_4 + 4)
-
-double :: 2 *
-
-[1 2 3] . (3 ==) map
-(3 ==) map [1 2 3]
-
-[false false true]
-
-[0 0 1]
-[1 2 3] . (3 ==) filterByArray
-(3 ==).[1 2 3] filterByArray [1 2 3]
-[f f t] filterByArray [1 2 3]
-[3]
-
-
-
-
-{a}{*}{b}{+}{cat}{-}{d}{%}{e}
-
-+( *(a  b) 
-   -(cat 
-     %(d 
-       e)))
-
-+( *(a  b) 
-   -(cat 
-     %(d 
-       e)))
- 
-a b * cat d e % - +
-
-{a}{+}{b}{*}{braces : {c}{%}{d} }
-a + b * (c % d)
-
-
-
-
-
-
-
-
-
-
-
-
-1 + 1
-+ (:: num num num)
-compliant (:: (num num num) [num] num [num]) 
-[1 2 3] + 2 
-
-
-=> [3 4 5]
-double (:: num num) 2 *
-
-1.double
-
-1.double
-[1 2 3] +
-
-(a b) <==> ?{x :: a_x b x}
-
-* (:: num num | num)
-id (:: 'A 'A)
-5.(2 * id)
-
-
-(+ *)_5_6
-(+_5_6 * 5)
-
-1 (2 + *) 3
-
-(+ (* 1 3) (const 2 _))
-
-[1 2 3].(0 fold +).?{a :: a}
-
-
+45;34;57:vec3
 
 
 
 
 (fact (:: num num) 
-  iota . (1 +).fmap  (:: num [num])
+  iota . (1 +).fmap  .: num [num]
   .
-  1 fold *           (:: [num] num)       
+  1 fold *           .: [num] num
 )
+
 
 (fizzbuzz [(:: num [string])
     f :: "fizz"
@@ -1099,12 +889,297 @@ id (:: 'A 'A)
 fizzbuzz_70
 70.fizzbuzz
 
-[1 2].(fizzbuzz.fmap)
 
-pair :: { ,(:1 :2) }
 
-pair_1_2
-,(1 2)
+
+# Structural typing to the extreme
+
+# Tuples are actually statically typed nested pairs
+,(1 2 3) <=> ,(1 ,(2 3))
+,(,(1 2) 3 4) <=> ,(,(1 2) ,(3 4))
+,(,(1 2) ,(3 4) ,(5 6)) <=> ,(,(1 2) ,(,(3 4) ,(5 6)))
+
+# Typedef ?
+?{a b c :: a_b_c}
+\{ :1_:2_:3 }
+
+
+Result:'T:'E := 1{Ok:'T Err:'E}
+Ok:'A  := 'A
+Err:'B := 'B
+
+(Result:'T:'E := 1{
+  Ok  := 'T 
+  Err := 'E
+})
+
+H  := 1{nil Box_H}
+j  := {a b}
+j1 := 1(j)
+k  := {c 1(j)}
+
+
+a      => {a b ..}
+,(a b) => {a b}
+,(b a) => {a b}
+
+{}     => 0{a b ..}
+a      => 1{a b ..}
+,(b a) => 2{a b ..}
+,(a b) => 2{a b ..}
+,(a a)                               => ,[a 2]
+,(,(b a) ,(a b)) => ,(2{a b} 2{a b}) => array:2:2{a b}
+
+
+Option:'T := 1{Some:'T None}
+
+zeros :: v3_{x_0 y_0 x_0}
+a :: {x_5 .. zeros}:v3
+j (:: {int char}) {'5' 0}
+
+(vec3 := {
+  x := u16
+  y := u16
+  z := u16
+})
+
+
+vec3 := {x y z}
+
+x := u16
+y := u16
+z := u16
+vec3 := {x y z}
+
+v :: v3_{x_5 y_7 z_9}
+
+(swap :: ?{ 
+  val : v3_{x_a y_b ..} :: {y_a x_b .. val}:v3 
+})
+swap :: ?{ v3_{x_a y_b z_c} :: v3_{y_a x_b z_c} }
+
+
+:# relational algebra on types?
+g : {a b c}
+G := {a b c}
+j : {b c d}
+J := {b c d}
+k : union_g_j        :# <=> {a b c d e}
+l : intersection:g:j :# <=> {b c}
+m : anti-join:g:j    :# <=> {a}
+l : {g j}            :# <=> union_g_j   :# auto flattening
+L : {G J}            :# <=> {G J}       :# G and J are named, so they do not flatten
+t : {G g}            :# <=> {G a b c}   :# note g will flatten
+
+
+b : box:(1{tensor:num tensor:char})
+[[2 3]:b 
+ ["hey" "bro"]
+]:tensor:b
+
+v : vec:num
+[4 5]:v
+
+a : array:3:num
+[5 6]:a
+
+a : array:2:(v : vec:num)
+[[1 2 3]:v
+ [5 6 7]
+]:a
+
+v : vec:(a : array:3:num)
+[[1 2 3]:a
+ [4 5 6]
+]:v
+
+v : vec:(vec:num)
+[[num]]:v1
+
+[num]:vec:num
+
+[num]:array:3:num
+[num]:vec:num
+[num]:tensor
+
+[1 2 3]:(vec:num) . 0 fold +
+
+
+f : {a b c}
+k : {d e f}
+u : {f k} <=> {a b c d e f}
+i := 1{u}
+
+
+
+
+
+
+tensor:'T : {
+ shape   -: owned-slice:usize
+ data:'T -: owned-slice:'T
+}
+owned-slice:'T : {
+  offset :- usize 
+  length :- usize
+  arc:(raw-slice:'T)
+}
+
+animal:'T : {cat dog 'T}    :# note cat and dog cannot be 'T
+a : animal:'T_1             :# 
+
+
+apointment:'T : {time:'T place}
+time:'T : 'T where ...
+date       :- Array:3:num
+place      : string
+
+alarm :- time:hour
+
+event:'T :- {time:'T place}
+event:'T :- apointment:'T 
+
+event:hour
+
+message : {coordinates string}
+coordinates :- Array:3:num
+
+base : {Array:3:num string}
+
+j (:: message) {coordinates_[1 2 3] "yoyoyo"}
+j_coordinates
+
+
+(Iterator:'T :- { 'T | (Item ) next)
+next:'T:'G (:: 'T ,:option:'G) .. 
+
+
+
+Optional:'T : {'T None}_1
+
+{StreetAdress
+ PostalCode
+ City
+ Country
+ Name
+}_(-1)
+
+
+
+(sum:'T :  ['T 'T_[Iterator Output]]:fn | 'T member /_intersect_[Iterator EmptyElement +:'T]
+  ::
+  'T_EmptyElement fold +
+)
+
+
+'T_Iterator :- {'T .. Iterator} | (`T_[Iterator Output] :- ...) (next : ['T 'T_[Iterator Output]]:fn := ...)
+
+
+
+{'T |
+  'T | even_'T
+  ..
+  {u8_'A other yup}
+}
+
+()
+[]
+{}
+
+
+('T | 'T member reduce_intersection_[Iterator Default Add])
+
+
+[,('T 'G) | 
+  {'T ..  0..15}  :# pattern match?
+  [  ('G | 'G contains [3  5]) ..  [2 3 2 3]]
+  {'T 'G}
+]
+
+
+{,('T 'G) |
+  {'T .. {1 2 3 4}}  :# pattern match
+
+  {'G .. {2 3 4 5 6}}
+
+  {'T 'G}
+  ..
+  {u8_:all}        :# set comprehension requires an input set, the largest being `Type`
+}
+
+
+?{['T .. 0..9]  :: 'T}
+
+
+
+
+()
+[]
+{}
+('T | 'T_Iterator)
+[|]
+
+
+
+
+
+list:'T :- [num 'T]:object :: self idx
+boolean : {true false}
+bool: boolean_1
+
+person :- name-age
+car    :- name-age
+name-age : {name age}
+{name-age true} = {name age true}
+
+age  :- num 
+name :- string
+
+[1 2 3]_1
+
+double :: 2 *
+f :: [double 2 triple]:([num Array:num]:fn)
+
+f_4 = [8 2 12]
+
+{3.2:posit id pair}:([num char {num ,(num char) posit}])
+
+{3.2:posit id pair}_4_'h'
+{(3.2:posit) id_4 pair_4}_'h'
+{(3.2:posit) (id_4):num pair_4_'h'}
+{<3.2:posit> (id_4):num ,(4 'h')}
+
+
+
+
+[]:tuple
+
+
+
+
+
+
+[1 2 3 4]
+
+f :: [Array_num num]:fn 
+f = 
+
+
+
+
+
+a := {1 2 3}  # a set
+b := {4 5 6}
+c := a union b
+d := 
+
+
+
+
+
+
+
+
 
 
 

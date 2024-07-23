@@ -1,8 +1,10 @@
 [package]
-name = "new_language"
+name = "wild_language"
 version = "0.1.0"
 edition = "2021"
+authors = ["Remy Pierre Bushnell Clarke"]
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+logos = "0.12.1"
